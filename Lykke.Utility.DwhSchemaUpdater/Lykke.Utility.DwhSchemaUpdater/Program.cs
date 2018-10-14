@@ -95,19 +95,19 @@ namespace Lykke.Utility.DwhSchemaUpdater
             while (true)
             {
                 ContainerResultSegment containersResult = await blobClient.ListContainersSegmentedAsync(token);
-                if (containersResult == null || !containersResult.Results.Any())
+                if (containersResult?.Results.Any() ?? false)
+                    foreach (var container in containersResult.Results)
+                    {
+                        await ProcessContainerAsync(
+                            blobAccountName,
+                            blobAccountKey,
+                            container,
+                            sqlConnString);
+                    }
+
+                token = containersResult?.ContinuationToken;
+                if (token == null)
                     break;
-
-                token = containersResult.ContinuationToken;
-
-                foreach (var container in containersResult.Results)
-                {
-                    await ProcessContainerAsync(
-                        blobAccountName,
-                        blobAccountKey,
-                        container,
-                        sqlConnString);
-                }
             }
         }
 
