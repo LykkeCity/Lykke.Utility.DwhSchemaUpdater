@@ -19,6 +19,8 @@ namespace Lykke.Utility.DwhSchemaUpdater
         private const string _sqlCredentialsArg = "--sqlCredentials";
         private const string _containerArg = "--blobContainer";
         private const string _structureFileName = "TableStructure.str2";
+        private const string _structureUpdateFileName = "lastStructureUpdate.txt";
+        private const int _maxRetryCount = 5;
 
         private static readonly BlobRequestOptions _blobRequestOptions = new BlobRequestOptions
         {
@@ -121,6 +123,10 @@ namespace Lykke.Utility.DwhSchemaUpdater
             if (tablesStructure == null)
                 return;
 
+            bool updateRequired = await CheckUpdateRequiredAsync(container);
+            if (!updateRequired)
+                return;
+
             var columnsListDict = GetColumnsListsFromStructure(tablesStructure);
             foreach (var tableStructure in tablesStructure.Tables)
             {
@@ -133,14 +139,54 @@ namespace Lykke.Utility.DwhSchemaUpdater
                     container.Name,
                     tableStructure.AzureBlobFolder,
                     columnsListDict[tableStructure.TableName]);
-
-                using (SqlConnection connection = new SqlConnection(sqlConnString))
+                int retryCount = 0;
+                while (true)
                 {
-                    await connection.OpenAsync();
-                    SqlCommand command = new SqlCommand(sql, connection);
-                    await command.ExecuteNonQueryAsync();
+                    try
+                    {
+                        using (SqlConnection connection = new SqlConnection(sqlConnString))
+                        {
+                            await connection.OpenAsync();
+                            SqlCommand command = new SqlCommand(sql, connection);
+                            await command.ExecuteNonQueryAsync();
+                        }
+                        break;
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        ++retryCount;
+                        if (retryCount > _maxRetryCount)
+                            throw;
+
+                        await Task.Delay(TimeSpan.FromSeconds(retryCount));
+                    }
                 }
             }
+
+            var updateBlob = container.GetBlockBlobReference(_structureUpdateFileName);
+            await updateBlob.UploadTextAsync(string.Empty);
+        }
+
+        private static async Task<bool> CheckUpdateRequiredAsync(CloudBlobContainer container)
+        {
+            var updateBlob = container.GetBlockBlobReference(_structureUpdateFileName);
+            if (!await updateBlob.ExistsAsync())
+                return true;
+
+            var structureBlob = container.GetBlockBlobReference(_structureFileName);
+            if (!await structureBlob.ExistsAsync())
+                return false;
+
+            if (structureBlob.Properties?.Created == null)
+                await structureBlob.FetchAttributesAsync();
+            var structureDate = structureBlob.Properties.LastModified ?? structureBlob.Properties.Created;
+
+            if (updateBlob.Properties?.Created == null)
+                await updateBlob.FetchAttributesAsync();
+            var updateDate = updateBlob.Properties.LastModified ?? updateBlob.Properties.Created;
+
+            return structureDate > updateDate;
         }
 
         private static async Task<TablesStructure> GetStructureFromContainerAsync(CloudBlobContainer container)
