@@ -178,14 +178,8 @@ namespace Lykke.Utility.DwhSchemaUpdater
             if (!await structureBlob.ExistsAsync())
                 return false;
 
-            if (structureBlob.Properties?.Created == null)
-                await structureBlob.FetchAttributesAsync();
             var structureDate = structureBlob.Properties.LastModified ?? structureBlob.Properties.Created;
-
-            if (updateBlob.Properties?.Created == null)
-                await updateBlob.FetchAttributesAsync();
             var updateDate = updateBlob.Properties.LastModified ?? updateBlob.Properties.Created;
-
             return structureDate > updateDate;
         }
 
