@@ -95,7 +95,7 @@ namespace Lykke.Utility.DwhSchemaUpdater
             while (true)
             {
                 ContainerResultSegment containersResult = await blobClient.ListContainersSegmentedAsync(token);
-                if (containersResult?.Results == null)
+                if (containersResult?.Results != null)
                     foreach (var container in containersResult.Results)
                     {
                         await ProcessContainerAsync(
